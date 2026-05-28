@@ -1,227 +1,122 @@
-# IMPORTACIÓN DE LIBRERÍAS
-
 import numpy as np
 
-# Implementa el método simplex para resolver
-# problemas de programación lineal.
 
-class SimplexSolver:
+def detect_basic_variables(tableau, variable_names):
+    num_constraints = tableau.shape[0] - 1
 
-    def __init__(self, objective, constraints):
+    basic_variables = []
 
-        self.objective = objective
-        self.constraints = constraints
-        self.num_variables = len(objective)
-        self.num_constraints = len(constraints)
+    for row in range(num_constraints):
+        basic_variable = None
 
-        # Al iniciar el simplex, si las restricciones son <=,
-        # las variables básicas iniciales son las holguras S1, S2, S3...
-        self.basic_variables = [
-            f"S{i + 1}" for i in range(self.num_constraints)
-        ]
+        for col in range(len(variable_names)):
 
-        self.tableau = None
+            column = tableau[:, col]
+            constraint_column = column[:-1]
 
-# Construye el tableau simplex inicial. 
+            ones = np.isclose(constraint_column, 1)
+            zeros = np.isclose(constraint_column, 0)
 
-    def create_tableau(self):
+            if np.sum(ones) == 1 and np.sum(~zeros) == 1:
+                if ones[row]:
+                    basic_variable = variable_names[col]
+                    break
 
-        rows = self.num_constraints + 1
-        cols = self.num_variables + self.num_constraints + 1
+        basic_variables.append(basic_variable)
 
-        tableau = np.zeros((rows, cols))
+    return basic_variables
 
-        # Restricciones
-        for i, constraint in enumerate(self.constraints):
 
-            coeffs = constraint["coefficients"]
-            rhs = constraint["rhs"]
+def is_optimal(tableau):
+    return np.all(tableau[-1, :-1] >= 0)
 
-            tableau[i, :self.num_variables] = coeffs
 
-            # Variable de holgura
-            tableau[i, self.num_variables + i] = 1
+def get_pivot_column(tableau):
+    return int(np.argmin(tableau[-1, :-1]))
 
-            # Lado derecho
-            tableau[i, -1] = rhs
 
-        # Función objetivo
-        # Para maximización se colocan negativos los coeficientes
-        tableau[-1, :self.num_variables] = -np.array(self.objective)
+def get_pivot_row(tableau, pivot_col, num_constraints):
+    ratios = []
 
-        self.tableau = tableau
+    for i in range(num_constraints):
+        element = tableau[i, pivot_col]
 
-# Devuelve el nombre asociado a una columna del tableau simplex.
+        if element > 0:
+            ratio = tableau[i, -1] / element
+        else:
+            ratio = np.inf
 
-    def get_variable_name(self, column_index):
+        ratios.append(ratio)
 
-        # Si la columna pertenece a las variables originales
-        if column_index < self.num_variables:
-            return f"X{column_index + 1}"
+    return int(np.argmin(ratios))
 
-        # Si la columna pertenece a variables de holgura
-        slack_index = column_index - self.num_variables
-        return f"S{slack_index + 1}"
 
-# Verifica si la solución actual es óptima.
+def get_variable_name(variable_names, index):
+    return variable_names[index]
 
-    def is_optimal(self):
 
-        last_row = self.tableau[-1, :-1]
+def pivot(tableau, pivot_row, pivot_col):
+    pivot_element = tableau[pivot_row, pivot_col]
 
-        # En maximización, cuando ya no hay negativos en la fila Z,
-        # la solución actual es óptima
-        return np.all(last_row >= 0)
+    tableau[pivot_row] = tableau[pivot_row] / pivot_element
 
-# Selecciona la variable entrante.
+    for i in range(len(tableau)):
+        if i != pivot_row:
+            factor = tableau[i, pivot_col]
+            tableau[i] = tableau[i] - factor * tableau[pivot_row]
 
-    def get_pivot_column(self):
 
-        last_row = self.tableau[-1, :-1]
+def solve_simplex(tableau, variable_names):
 
-        # Entra la variable con el coeficiente más negativo
-        return int(np.argmin(last_row))
+    num_constraints = tableau.shape[0] - 1
 
-# Selecciona la variable saliente usando la prueba de razón mínima.
+    basic_variables = detect_basic_variables(tableau, variable_names)
 
-    def get_pivot_row(self, pivot_col):
+    iterations = []
 
-        ratios = []
+    # Inicial
+    iterations.append({
+        "iteration": 0,
+        "tableau": tableau.copy(),
+        "basic_variables": basic_variables.copy(),
+        "entering_variable": None,
+        "leaving_variable": None,
+        "message": "Tableau inicial"
+    })
 
-        for i in range(self.num_constraints):
+    while not is_optimal(tableau):
 
-            element = self.tableau[i, pivot_col]
+        pivot_col = get_pivot_column(tableau)
+        pivot_row = get_pivot_row(tableau, pivot_col, num_constraints)
 
-            if element > 0:
-                ratio = self.tableau[i, -1] / element
-            else:
-                ratio = np.inf
+        entering_variable = get_variable_name(variable_names, pivot_col)
+        leaving_variable = basic_variables[pivot_row]
 
-            ratios.append(ratio)
+        basic_variables[pivot_row] = entering_variable
 
-        # Sale la variable con la menor razón positiva
-        return int(np.argmin(ratios))
+        pivot(tableau, pivot_row, pivot_col)
 
-# Calcula todas las razones mínimas utilizadas durante el método simplex.
-
-    def get_ratios(self, pivot_col):
-
-        ratios = []
-
-        for i in range(self.num_constraints):
-
-            element = self.tableau[i, pivot_col]
-
-            if element > 0:
-                ratio = self.tableau[i, -1] / element
-            else:
-                ratio = np.inf
-
-            ratios.append(ratio)
-
-        return ratios
-
-# Realiza el pivoteo del tableau simplex utilizando operaciones tipo Gauss-Jordan.
-
-    def pivot(self, pivot_row, pivot_col):
-
-        pivot_element = self.tableau[pivot_row, pivot_col]
-
-        # Convertir el pivote en 1
-        self.tableau[pivot_row] = (
-            self.tableau[pivot_row] / pivot_element
-        )
-
-        # Convertir en 0 los demás elementos de la columna pivote
-        for i in range(len(self.tableau)):
-
-            if i != pivot_row:
-
-                factor = self.tableau[i, pivot_col]
-
-                self.tableau[i] = (
-                    self.tableau[i]
-                    - factor * self.tableau[pivot_row]
-                )
-
-# Ejecuta el algoritmo simplex completo.
-
-    def solve(self):
-
-        self.create_tableau()
-
-        iterations = []
-
-        # Guardamos el tablero inicial
         iterations.append({
-            "iteration": 0,
-            "tableau": self.tableau.copy(),
-            "basic_variables": self.basic_variables.copy(),
-            "basic_variables_before": self.basic_variables.copy(),
-            "entering_variable": None,
-            "leaving_variable": None,
-            "pivot_element": None,
-            "ratios": None,
-            "message": (
-                "Tableau inicial. Se revisa la fila Z para buscar coeficientes negativos. "
-                "Si existen coeficientes negativos, la solución aún no es óptima."
-            )
+            "iteration": len(iterations),
+            "tableau": tableau.copy(),
+            "basic_variables": basic_variables.copy(),
+            "entering_variable": entering_variable,
+            "leaving_variable": leaving_variable,
+            "message": f"Entra {entering_variable}, sale {leaving_variable}"
         })
 
-        while not self.is_optimal():
+    # solución final
+    solution = {v: 0 for v in variable_names}
 
-            pivot_col = self.get_pivot_column()
+    for i, var in enumerate(basic_variables):
+        solution[var] = tableau[i, -1]
 
-            pivot_row = self.get_pivot_row(pivot_col)
+    optimal_value = tableau[-1, -1]
 
-            ratios = self.get_ratios(pivot_col)
-
-            entering_variable = self.get_variable_name(pivot_col)
-            leaving_variable = self.basic_variables[pivot_row]
-            pivot_element = self.tableau[pivot_row, pivot_col]
-
-            basic_variables_before = self.basic_variables.copy()
-
-            # Actualizamos la variable básica de la fila pivote.
-            # La variable que entra reemplaza a la que sale.
-            self.basic_variables[pivot_row] = entering_variable
-
-            self.pivot(pivot_row, pivot_col)
-
-            # Guardamos cada tablero después del pivoteo
-            iterations.append({
-                "iteration": len(iterations),
-                "tableau": self.tableau.copy(),
-                "basic_variables": self.basic_variables.copy(),
-                "basic_variables_before": basic_variables_before,
-                "entering_variable": entering_variable,
-                "leaving_variable": leaving_variable,
-                "pivot_element": pivot_element,
-                "ratios": ratios,
-                "message": (
-                    f"Entra {entering_variable}, sale {leaving_variable}. "
-                    f"El elemento pivote es {pivot_element:.4f}."
-                )
-            })
-
-        solution = np.zeros(self.num_variables)
-
-        # Extraemos la solución final usando las variables básicas finales
-        for row_index, variable_name in enumerate(self.basic_variables):
-
-            if variable_name.startswith("X"):
-
-                variable_index = int(variable_name[1:]) - 1
-
-                if variable_index < self.num_variables:
-                    solution[variable_index] = self.tableau[row_index, -1]
-
-        optimal_value = self.tableau[-1, -1]
-
-        return {
-            "solution": solution,
-            "optimal_value": optimal_value,
-            "tableau": self.tableau,
-            "iterations": iterations,
-            "basic_variables": self.basic_variables
-        }
+    return {
+        "solution": solution,
+        "optimal_value": optimal_value,
+        "tableau": tableau,
+        "iterations": iterations,
+        "basic_variables": basic_variables
+    }

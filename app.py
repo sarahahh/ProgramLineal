@@ -5,7 +5,8 @@ from ui.simplex_ui import show_simplex_iterations
 from ui.graphical_ui import show_graphical_solution
 
 from simplex.parser import build_problem
-from simplex.simplex_solver import SimplexSolver
+from simplex.simplex_solver import solve_simplex
+from simplex.tableau_builder import build_initial_tableau
 from simplex.graphical_method import solve_graphical_method
 
 # Configuración de la página
@@ -36,12 +37,13 @@ if problem_data:
         problem_data["constraints"]
     )
 
-    solver = SimplexSolver(
-        objective=parsed_problem["objective"],
-        constraints=parsed_problem["constraints"]
+    # CREAR TABLEAU
+    tableau_data = build_initial_tableau(parsed_problem)
+    
+    result = solve_simplex(
+        tableau=tableau_data["tableau"],
+        variable_names=tableau_data["variable_names"]
     )
-
-    result = solver.solve()
 
     show_simplex_iterations(
         result=result,
